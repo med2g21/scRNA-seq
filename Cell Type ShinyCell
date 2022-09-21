@@ -1,0 +1,78 @@
+```{r setup, include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SeuratDisk)
+library(SeuratData)
+library(ShinyCell)
+```
+
+```{r loaddata}
+macroSeu <- LoadH5Seurat(file="/media/megan/DATA/tabulasapian/macrophage_combined.h5seurat",misc=F)
+
+```
+
+```{r QC}
+macroSeu[["percent.mt"]] <- PercentageFeatureSet(macroSeu, pattern = "^MT-")
+VlnPlot(macroSeu, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+macroSeu <- subset(macroSeu, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+```{r normalise}
+macroSeu <- NormalizeData(macroSeu, normalization.method = "LogNormalize", scale.factor = 10000)
+
+```
+
+```{r hvgs}
+macroSeu <- FindVariableFeatures(macroSeu, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(macroSeu), 10)
+top10
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(macroSeu)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+```{r scaleData}
+
+all.genes <- rownames(macroSeu)
+macroSeu <- ScaleData(macroSeu, features = all.genes)
+macroSeu <- RunPCA(macroSeu, features = VariableFeatures(object = macroSeu))
+VizDimLoadings(macroSeu, dims = 1:2, reduction = "pca")
+DimPlot(macroSeu, reduction = "pca")
+DimHeatmap(macroSeu, dims = 1, cells = 500, balanced = TRUE)
+macroSeu <- JackStraw(macroSeu, num.replicate = 100)
+macroSeu <- ScoreJackStraw(macroSeu, dims = 1:20)
+JackStrawPlot(macroSeu, dims = 1:15)
+ElbowPlot(macroSeu)
+```
+
+```{r cluster}
+macroSeu <- FindNeighbors(macroSeu, dims = 1:13)
+macroSeu <- FindClusters(macroSeu, resolution = 0.5)
+macroSeu <- RunUMAP(macroSeu, dims = 1:10)
+DimPlot(macroSeu, reduction = "umap")
+DimPlot(macroSeu, reduction = "umap",group.by="donor")
+```
+
+```{r findMarkers}
+macroSeu.markers <- FindAllMarkers(macroSeu, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+macroSeu.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+
+```
+
+```{r viewMarker}
+FeaturePlot(macroSeu, features = c("S100A9", "VCAN", "SPP1", "GPR183", "SELENOP", "APOE", "RNA5SP151", "RN7SL368P", "CXCL5", "AKAP12"))
+DimPlot(macroSeu, reduction = "umap",group.by="donor")
+```
+
+```{r ShinyCell}
+scConf = createConfig(macroSeu)
+makeShinyApp(macroSeu, scConf, gene.mapping = TRUE,
+             shiny.title = "Macrophage ShinyCell")
+```
