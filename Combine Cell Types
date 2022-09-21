@@ -1,0 +1,75 @@
+library(Seurat)
+library(SeuratDisk)
+library(SeuratData)
+library(data.table)
+library(Matrix)
+library(ggplot2)
+library(gridExtra)
+library(RColorBrewer)
+library(clustree)
+library(dplyr)
+library(patchwork)
+library(ShinyCell)
+library(DESeq2)
+
+#List of files
+h5seurat_path = "/media/megan/DATA/tabulasapian/h5seurat"
+h5seurat_files <- list.files(path = h5seurat_path, pattern="*.h5seurat",full.names =T)
+all_celltypes <- matrix(NA ,nrow =1, ncol=1)
+#Analyse all files
+analyseH5Seu <- function(filename) {
+  base  <- basename(filename)
+  alldata <- LoadH5Seurat(file=filename, misc=F)
+  #Create matrix and remove duplicate cell types
+  all_celltypes <- as.matrix(unique(alldata$cell_ontology_class))
+  return(all_celltypes)
+}
+allcombined <- lapply(h5seurat_files,analyseH5Seu)
+
+sorted_cellcounts <- names(sort(table(unlist(allcombined))))
+
+for_hist <- sort(table(unlist(allcombined)))
+
+#plot the frequency of each cell type??
+p <- ggplot(sorted_cellcounts, aes(x=??)) +
+  geom_histogram()
+
+#Create Seurat objects for each cell type in each data set
+extract_cells_from_H5Seu <- function(filename) {
+  base  <- basename(filename)
+  alldata <- LoadH5Seurat(file=filename,  misc=F)
+  all_celltypes <- unique(alldata$cell_ontology_class)
+  #Put list of unique cell types into cell type variable
+  for(celltype in all_celltypes){
+reduced <- subset(alldata, subset = cell_ontology_class == celltype)
+    #Create files for each cell type in each data set
+    out_filename <- paste0("/media/megan/DATA/tabulasapian/objects/celltypes",base,"_",celltype,".h5seurat")
+    SaveH5Seurat(reduced,out_filename,overwrite=TRUE)
+  }
+}
+h5seurat_path = "/media/megan/DATA/tabulasapian/h5seurat"
+h5seurat_files <- list.files(path = h5seurat_path, pattern="*.h5seurat",full.names =T)
+for(filename in h5seurat_files){
+    extract_cells_from_H5Seu(filename)
+}
+
+#combine cell types from each data set
+combine_same_celltypes <- function(files_path,celltype) {
+  matcher = paste0("*",celltype,"*")
+  h5seurat_files <- list.files(path = files_path, pattern=matcher,full.names =T)
+  #number of files with that cell type in
+  number_of_files <- length(h5seurat_files)
+  #make an empty list with number of files
+  list_of_seu_objs <-vector(mode="list",length=number_of_files)
+  for (i in 1:number_of_files){
+    list_of_seu_objs[[i]] <- LoadH5Seurat(file=h5seurat_files[[i]],misc=F)
+  }
+  tail_num <- number_of_files-1
+  #merge Seurat objects 1 with the number of files-1
+  merged_seu <- merge(x=list_of_seu_objects[[1]], y=tail(list_of_seu_objects, tail_num), project=celltype)
+  #create new file with each cell type
+  out_filename = paste0(files_path,celltype,"_combined.h5seurat")
+  print(out_filename)
+  SaveH5Seurat(merged_seu,out_filename,overwrite=TRUE)
+}
+combine_same_celltypes("/media/megan/DATA/tabulasapian/objects/celltypes/","t cell")
